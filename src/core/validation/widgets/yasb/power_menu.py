@@ -5,6 +5,7 @@ DEFAULTS = {
     "blur_background": True,
     "animation_duration": 200,
     "button_row": 3,
+    "sync_command": "",
     "container_padding": {"top": 0, "left": 0, "bottom": 0, "right": 0},
 }
 
@@ -14,7 +15,9 @@ VALIDATION_SCHEMA = {
     "blur": {"type": "boolean", "default": DEFAULTS["blur"]},
     "blur_background": {"type": "boolean", "default": DEFAULTS["blur_background"]},
     "animation_duration": {"type": "integer", "default": DEFAULTS["animation_duration"], "min": 0, "max": 2000},
-    "button_row": {"type": "integer", "default": DEFAULTS["button_row"], "min": 1, "max": 5},
+    "button_row": {"type": "integer", "default": DEFAULTS["button_row"], "min": 1, "max": 7},
+    "sync_command": {"type": "string", "default": DEFAULTS["sync_command"]},
+    "sync_and_shutdown_command": {"type": "string", "default": DEFAULTS["sync_command"]},
     "container_padding": {
         "type": "dict",
         "required": False,
@@ -60,6 +63,8 @@ VALIDATION_SCHEMA = {
             "hibernate": {"type": "list", "required": False},
             "force_shutdown": {"type": "list", "required": False},
             "force_restart": {"type": "list", "required": False},
+            "sync": {"type": "list", "required": False},
+            "sync_and_shutdown": {"type": "list", "required": False},
         },
     },
 }

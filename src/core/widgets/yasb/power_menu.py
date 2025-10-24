@@ -1,5 +1,6 @@
 import datetime
-
+import os
+import subprocess
 import psutil
 from PyQt6 import QtCore, QtGui
 from PyQt6.QtCore import QPropertyAnimation, Qt, pyqtSignal
@@ -121,6 +122,8 @@ class PowerMenuWidget(BaseWidget):
         blur_background: bool,
         animation_duration: int,
         button_row: int,
+        sync_command: str,
+        sync_and_shutdown_command: str,
         container_padding: dict[str, int],
         buttons: dict[str, list[str]],
         label_shadow: dict = None,
@@ -133,6 +136,8 @@ class PowerMenuWidget(BaseWidget):
         self.uptime = uptime
         self.blur_background = blur_background
         self.animation_duration = animation_duration
+        self.sync_command = sync_command
+        self.sync_and_shutdown_command = sync_and_shutdown_command
         self.button_row = button_row
         self._padding = container_padding
         self._label_shadow = label_shadow
@@ -190,6 +195,8 @@ class PowerMenuWidget(BaseWidget):
                 self.blur_background,
                 self.animation_duration,
                 self.button_row,
+                self.sync_command,
+                self.sync_and_shutdown_command,
                 self.buttons,
             )
             self.main_window.overlay.fade_in()
@@ -199,10 +206,12 @@ class PowerMenuWidget(BaseWidget):
 
 
 class MainWindow(BaseStyledWidget, AnimatedWidget):
-    def __init__(self, parent_button, uptime, blur, blur_background, animation_duration, button_row, buttons):
+    def __init__(self, parent_button, uptime, blur, blur_background, animation_duration, button_row, sync_command, sync_and_shutdown_command, buttons):
         super(MainWindow, self).__init__(animation_duration)
 
         self.overlay = OverlayWidget(animation_duration, uptime)
+        self.sync_command = sync_command
+        self.sync_and_shutdown_command = sync_and_shutdown_command
         self.parent_button = parent_button
         self.button_row = button_row  # Store button_row as instance attribute
 
@@ -478,3 +487,11 @@ class MainWindow(BaseStyledWidget, AnimatedWidget):
 
     def cancel_action(self):
         self.power_operations.cancel()
+
+    def sync_and_shutdown_action(self):
+        self.power_operations.cancel()
+        subprocess.Popen(self.sync_and_shutdown_command.split())
+
+    def sync_action(self):
+        self.power_operations.cancel()
+        subprocess.Popen(self.sync_command.split())
