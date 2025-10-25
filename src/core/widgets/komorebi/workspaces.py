@@ -1,11 +1,12 @@
+import base64
 import logging
 from contextlib import suppress
 from typing import Dict, List, Literal
 
 from PIL import Image
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QBuffer
 from PyQt6.QtGui import QCursor, QImage, QMouseEvent, QPixmap
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget, QGroupBox, QVBoxLayout
 
 from core.event_enums import KomorebiEvent
 from core.event_service import EventService
@@ -152,6 +153,11 @@ class WorkspaceButtonWithIcons(QFrame):
         if lock_width and prev_width is not None:
             self.setFixedWidth(prev_width)
 
+    def shorten(self, text: str, max_len: int) -> str:
+        if len(text) > max_len:
+            return text[:max_len] + "..."
+        return text
+
     def update_icons(self, icons: Dict[int, QPixmap] = None, update_width: bool = True):
         if icons:
             self.icons.update(icons)
@@ -169,28 +175,49 @@ class WorkspaceButtonWithIcons(QFrame):
         ):
             icons_list = []
         else:
-            icons_list = [icon for icon in self.icons.values() if icon is not None]
-            if self.parent_widget._workspace_app_icons["max_icons"] > 0:
-                icons_list = icons_list[: self.parent_widget._workspace_app_icons["max_icons"]]
+            icons_list = []
+            for key in self.icons:
+                icons_list.append((key, self.icons[key]))
 
-        prev_icon_count = len(self.icon_labels)
+        prev_icon_count = len(self.icon_labels) / 2
         # Remove extra QLabel widgets if there are more than needed
-        for extra_label in self.icon_labels[len(icons_list) :]:
+        for extra_label in self.icon_labels[len(icons_list) * 2 :]:
             self.button_layout.removeWidget(extra_label)
             extra_label.setParent(None)
-        self.icon_labels = self.icon_labels[: len(icons_list)]
+        self.icon_labels = self.icon_labels[: len(icons_list) * 2]
 
         # Add or update icons
-        for index, icon in enumerate(icons_list):
-            if index < len(self.icon_labels):
-                self.icon_labels[index].setPixmap(icon)
+        for index, entry in enumerate(icons_list):
+            workspace = self.parent_widget._get_all_windows_in_workspace(self.workspace_index)
+            title = "?"
+            for window in workspace:
+                if window["hwnd"] == entry[0]:
+                    title = self.shorten(window["title"], self.parent_widget._workspace_app_icons["max_title_length"])
+
+            pixmap: QPixmap = icons_list[index][1]
+
+            if index < len(self.icon_labels) / 2:
+                icon_label = self.icon_labels[index * 2]
+                text_label = self.icon_labels[index * 2 + 1]
+
+                icon_label.setPixmap(pixmap)
+                text_label.setText(title)
             else:
                 icon_label = QLabel()
                 icon_label.setProperty("class", f"icon icon-{index + 1}")
-                icon_label.setPixmap(icon)
+                icon_label.setPixmap(pixmap)
+
+                text_label = QLabel()
+                text_label.setText(title)
+                text_label.setMargin(4)
+                text_label.setProperty("class", f"icon-label icon-label-{index + 1}")
+
                 self.button_layout.addWidget(icon_label)
+                self.button_layout.addWidget(text_label)
+
                 add_shadow(icon_label, self.parent_widget._label_shadow)
                 self.icon_labels.append(icon_label)
+                self.icon_labels.append(text_label)
 
         curr_icon_count = len(icons_list)
 
