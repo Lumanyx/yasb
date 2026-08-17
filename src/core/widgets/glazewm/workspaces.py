@@ -18,6 +18,17 @@ from core.widgets.services.glazewm.client import GlazewmClient, Monitor, Window,
 logger = logging.getLogger("glazewm_workspaces")
 
 
+def sanitize_workspace_display_name(display_name: str) -> str:
+    if display_name is None:
+        return ""
+    sanitized_ws_name = display_name
+    if "-" in sanitized_ws_name:
+        sanitized_ws_name = sanitized_ws_name.split("-")[1]
+        # Offset the visual workspace index by one
+        sanitized_ws_name = str(int(sanitized_ws_name) + 1)
+    return sanitized_ws_name
+
+
 class WorkspaceStatus(StrEnum):
     EMPTY = auto()
     POPULATED = auto()
@@ -123,12 +134,19 @@ class GlazewmWorkspaceButton(QPushButton):
             self.setText(populated_label)
             self.setHidden(False)
         elif self.status == WorkspaceStatus.EMPTY:
-            self.setText(empty_label)
+            self.setText("")
+            self.setHidden(False)
         else:
             logger.warning("Unknown workspace status: %s", self.status)
 
 
 class GlazewmWorkspaceButtonWithIcons(QFrame):
+
+    def shorten(self, text: str, max_len: int) -> str:
+        if len(text) > max_len:
+            return text[:max_len] + "..."
+        return text
+
     def __init__(
         self,
         workspace_name: str,
@@ -142,7 +160,7 @@ class GlazewmWorkspaceButtonWithIcons(QFrame):
         self.setProperty("class", "ws-btn")
         self.glazewm_client = client
         self.workspace_name = workspace_name
-        self.display_name = display_name
+        self.display_name = sanitize_workspace_display_name(display_name or workspace_name or "")
         self.parent_widget = parent_widget
         self.config = config
         self.monitor_exclusive = config.monitor_exclusive
@@ -168,6 +186,7 @@ class GlazewmWorkspaceButtonWithIcons(QFrame):
         self.update_button()
 
     def update_button(self):
+        self.workspace_window_count = len(self._get_all_icons_in_workspace())
         self._update_status()
         self._update_label()
         self._update_icons()
@@ -184,22 +203,34 @@ class GlazewmWorkspaceButtonWithIcons(QFrame):
         # Even though the label class name, we still need to run this on the label to catch any different stylings we want to do when the status changes
         refresh_widget_style(self.text_label)
 
+        #if len(self.icon_labels) <= 0:
+        #    self.text_label.hide()
+
     def _update_label(self):
+        effective_display_name = sanitize_workspace_display_name(str(self.workspace_name or ""))
         replacements = {
-            "name": str(self.workspace_name or ""),
-            "display_name": str(self.display_name or ""),
+            "name": effective_display_name,
+            "display_name": effective_display_name,
         }
+        #is_active = self.status.value == self.status.value == WorkspaceStatus.ACTIVE_POPULATED or self.status.value == WorkspaceStatus.FOCUSED_EMPTY
+        #if len(self.icon_labels) > 0 or is_active:
+        #    self.text_label.setText(effective_display_name)
+        #    self.setHidden(False)
+        #else:
+        #    self.text_label.setText("")
+        #    self.setHidden(True)
+
         # Label priority: YASB config -> display_name from GlazeWM -> name from GlazeWM
-        populated_label = self.config.populated_label or self.display_name or self.workspace_name
-        empty_label = self.config.empty_label or self.display_name or self.workspace_name
-        active_populated_label = self.config.active_populated_label or self.display_name or self.workspace_name
-        active_empty_label = self.config.active_empty_label or self.display_name or self.workspace_name
+        populated_label = self.config.populated_label or effective_display_name or self.workspace_name
+        empty_label = self.config.empty_label or effective_display_name or self.workspace_name
+        active_populated_label = self.config.active_populated_label or effective_display_name or self.workspace_name
+        active_empty_label = self.config.active_empty_label or effective_display_name or self.workspace_name
         # have focused_ label variants fall back to equivalent active_ label variants if they are set (preserves previous functionality)
         focused_populated_label = (
-            self.config.focused_populated_label or active_populated_label or self.display_name or self.workspace_name
+            self.config.focused_populated_label or active_populated_label or effective_display_name or self.workspace_name
         )
         focused_empty_label = (
-            self.config.focused_empty_label or active_empty_label or self.display_name or self.workspace_name
+            self.config.focused_empty_label or active_empty_label or effective_display_name or self.workspace_name
         )
         # Replace placeholders if any exist
         populated_label = populated_label.format_map(replacements)
@@ -224,7 +255,7 @@ class GlazewmWorkspaceButtonWithIcons(QFrame):
             self.text_label.setText(populated_label)
             self.setHidden(False)
         elif self.status == WorkspaceStatus.EMPTY:
-            self.text_label.setText(empty_label)
+            self.text_label.setText(effective_display_name)
         else:
             logger.warning("Unknown workspace status: %s", self.status)
 
@@ -251,10 +282,18 @@ class GlazewmWorkspaceButtonWithIcons(QFrame):
             return [window for window in windows if not window.is_floating]
         return windows
 
-    def _get_all_icons_in_workspace(self) -> dict[int, QPixmap | None]:
-        windows = self._get_all_windows_in_workspace()
+    def _get_all_icons_in_workspace(self) -> dict[int, tuple[QPixmap | None, str]]:
+        base_windows = self._get_all_windows_in_workspace()
+        windows = []
+
+        for window in base_windows:
+            if window.is_minimized: continue
+            windows.append(window)
+
         self._unique_pids = set()
-        return {window.handle: self._get_app_icon(window) for window in windows}
+
+        # Return a dictionary where the value is a tuple of (icon, title)
+        return {window.handle: (self._get_app_icon(window), window.title) for window in windows}
 
     def _get_app_icon(self, window: Window, ignore_cache: bool = False) -> QPixmap | None:
         try:
@@ -319,28 +358,49 @@ class GlazewmWorkspaceButtonWithIcons(QFrame):
                 icons_list = icons_list[: self.config.app_icons.max_icons]
 
         # Remove extra QLabel widgets if there are more than needed
-        for extra_label in self.icon_labels[len(icons_list) :]:
+        for extra_label in self.icon_labels[len(icons_list) * 2 :]:
             self.button_layout.removeWidget(extra_label)
             extra_label.hide()
             extra_label.deleteLater()
-        self.icon_labels = self.icon_labels[: len(icons_list)]
+        self.icon_labels = self.icon_labels[: len(icons_list) * 2]
 
         # Add or update icons
-        for index, icon in enumerate(icons_list):
-            if index < len(self.icon_labels):
-                self.icon_labels[index].setPixmap(icon)
+        for index, entry in enumerate(icons_list):
+
+            icon = entry[0]
+            window_title = self.shorten(entry[1], 24)
+
+            if index < len(self.icon_labels) / 2:
+                icon_label = self.icon_labels[index * 2]
+                text_label = self.icon_labels[index * 2 + 1]
+
+                icon_label.setPixmap(icon)
+                text_label.setText(window_title)
             else:
-                icon_label = QLabel(self)
+                icon_label = QLabel()
                 icon_label.setProperty("class", f"icon icon-{index + 1}")
                 icon_label.setPixmap(icon)
-                self.button_layout.addWidget(icon_label)
-                self.icon_labels.append(icon_label)
 
-        if self.config.app_icons.hide_label and len(self.icon_labels) > 0:
+                text_label = QLabel()
+                text_label.setText(window_title)
+                text_label.setMargin(4)
+                text_label.setProperty("class", f"icon-label icon-label-{index + 1}")
+
+                self.button_layout.addWidget(icon_label)
+                self.button_layout.addWidget(text_label)
+
+                #add_shadow(icon_label, self.parent_widget._label_shadow)
+                self.icon_labels.append(icon_label)
+                self.icon_labels.append(text_label)
+
+        should_hide = self.config.app_icons.hide_label and len(self.icon_labels) > 0
+        if self.status.value == WorkspaceStatus.EMPTY:
+            should_hide = True
+
+        if should_hide:
             self.text_label.hide()
         else:
             self.text_label.show()
-
 
 class GlazewmWorkspacesWidget(BaseWidget):
     validation_schema = GlazewmWorkspacesConfig
@@ -415,13 +475,14 @@ class GlazewmWorkspacesWidget(BaseWidget):
 
         for workspace in workspace_source.values():
             if (btn := self.workspaces.get(workspace.name)) is None:
+
                 if self.workspace_app_icons_enabled:
                     btn = self.workspaces[workspace.name] = GlazewmWorkspaceButtonWithIcons(
                         workspace.name,
                         self.glazewm_client,
                         parent_widget=self,
                         config=self.config,
-                        display_name=workspace.display_name,
+                        display_name=sanitize_workspace_display_name(workspace.display_name),
                         windows=workspace.windows,
                     )
                 else:
@@ -429,14 +490,14 @@ class GlazewmWorkspacesWidget(BaseWidget):
                         workspace.name,
                         self.glazewm_client,
                         config=self.config,
-                        display_name=workspace.display_name,
+                        display_name=sanitize_workspace_display_name(workspace.display_name),
                         parent_widget=self,
                     )
 
             btn.monitor_exclusive = self.config.monitor_exclusive
             btn.workspace_name = workspace.name
-            btn.display_name = workspace.display_name
-            btn.workspace_window_count = workspace.num_windows
+            btn.display_name=sanitize_workspace_display_name(workspace.display_name),
+            btn.workspace_window_count = len(btn._get_all_icons_in_workspace())
             btn.is_displayed = workspace.is_displayed
             btn.is_focused = btn.workspace_name == global_focused_ws if global_focused_ws else workspace.focus
             if self.workspace_app_icons_enabled:

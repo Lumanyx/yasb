@@ -20,6 +20,7 @@ class Window:
     process_name: str
     display_state: str
     is_floating: bool
+    is_minimized: bool
 
 
 @dataclass
@@ -220,6 +221,7 @@ class GlazewmClient(QObject):
                         process_name=child.get("processName"),
                         display_state=child.get("displayState"),
                         is_floating=child.get("state").get("type") == "floating",
+                        is_minimized=child.get("state").get("type") == "minimized",
                     )
                 )
             elif child.get("type") == "split":
